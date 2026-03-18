@@ -81,13 +81,29 @@
         const tableData = ref([]);
 
         const handleUploadSuccess = (response) => {
-          taskStatus.value = response.message || '文件已进入后台处理队列！';
+          taskStatus.value = response.message || '文件已进入后台处理队列，即将刷新列表...';
+          // 自动延迟抓取最新数据（因为后台是大模型处理）
+          setTimeout(fetchRecords, 5000);
+          setTimeout(fetchRecords, 10000);
         };
 
         const fetchRecords = async () => {
           try {
             const res = await axios.get('/api/v1/records');
             tableData.value = res.data;
+            
+            // 尝试获取其中一种设备的预测数据来更新图表 (例如高压熔断器)
+            const forecastRes = await axios.get('/api/v1/forecast/高压熔断器');
+            if (forecastRes.data && forecastRes.data.data) {
+              const predictions = JSON.parse(forecastRes.data.data.forecast_json);
+              if (predictions && predictions.length > 0) {
+                 const myChart = echarts.getInstanceByDom(document.getElementById('lcc-chart')) || echarts.init(document.getElementById('lcc-chart'));
+                 myChart.setOption({
+                   title: { text: `设备全生命周期预测 (高压熔断器) - ${forecastRes.data.data.algo_used}` },
+                   series: [{ data: predictions, type: 'line', smooth: true, areaStyle: { opacity: 0.3 } }]
+                 });
+              }
+            }
           } catch (error) {
             console.error('获取失败', error);
           }

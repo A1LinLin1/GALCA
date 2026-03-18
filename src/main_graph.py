@@ -47,15 +47,31 @@ def analytics_node(state: GraphState):
     
     # 1. 异构数据对齐
     for r in raw_records:
-        if '设备类型' in r and '成本(万元)' in r:
-            cleaned_data.append(r)
-        elif 'equipment_type' in r and 'amount' in r:
-            amt = float(r['amount'])
+        import re
+        
+        # 兼容性增强提取逻辑
+        eq_type = r.get('设备类型') or r.get('equipment_type') or r.get('用途/电压等级') or r.get('类型')
+        raw_amt = r.get('成本(万元)') or r.get('amount') or r.get('发生金额(万元)') or r.get('报价（含税）')
+        date = r.get('日期') or r.get('date') or '2025-01-01'
+        
+        if eq_type and raw_amt is not None:
+            amt = 0.0
+            if isinstance(raw_amt, str):
+                matches = re.findall(r"[\d]+[.]?[\d]*", raw_amt)
+                if matches:
+                    amt = float(matches[0])
+            else:
+                try:
+                    amt = float(raw_amt)
+                except:
+                    amt = 0.0
+                    
             if amt > 1000:
                 amt = amt / 10000.0
+                
             cleaned_data.append({
-                '设备类型': r['equipment_type'],
-                '日期': r['date'],
+                '设备类型': eq_type,
+                '日期': date,
                 '成本(万元)': amt
             })
 
@@ -64,8 +80,8 @@ def analytics_node(state: GraphState):
     forecaster = LCCForecaster()
     
     # 2. 动态感知与白名单过滤
-    # 我们只关注这四类，但只处理用户实际上传了的！
-    allowed_equipments = ["高压熔断器", "隔离开关", "交流避雷器", "电缆终端"]
+    # 我们扩展白名单，加入用户刚才上传的非标设备 (低压配电 / 建筑)
+    allowed_equipments = ["高压熔断器", "隔离开关", "交流避雷器", "电缆终端", "低压配电 0.6/1kV", "低压配线（建筑）", "电缆"]
     
     if not df.empty and '设备类型' in df.columns:
         # 动态提取用户本次上传的文件中实际包含了哪些设备
