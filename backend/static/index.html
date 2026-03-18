@@ -49,13 +49,8 @@
               <template #header>
                 <div class="card-header">
                   <span>📈 LCC 成本拟合曲线</span>
-                  <el-select v-model="selectedEquipment" @change="fetchForecast" placeholder="选择设备类型" style="width: 200px">
-                    <el-option label="高压熔断器" value="高压熔断器"></el-option>
-                    <el-option label="隔离开关" value="隔离开关"></el-option>
-                    <el-option label="交流避雷器" value="交流避雷器"></el-option>
-                    <el-option label="电缆终端" value="电缆终端"></el-option>
-                    <el-option label="电缆" value="电缆"></el-option>
-                    <el-option label="低压配电 0.6/1kV" value="低压配电 0.6/1kV"></el-option>
+                  <el-select v-model="selectedEquipment" @change="onEquipmentChange" placeholder="选择设备类型" style="width: 200px">
+                    <el-option v-for="item in availableEquipments" :key="item" :label="item" :value="item"></el-option>
                   </el-select>
                 </div>
               </template>
@@ -72,27 +67,13 @@
                   <el-button type="primary" size="small" @click="fetchRecords">刷新数据</el-button>
                 </div>
               </template>
-              <el-table :data="tableData" border stripe>
+              <el-table :data="tableData" border stripe max-height="400">
                 <el-table-column prop="equipment_type" label="设备类型"></el-table-column>
                 <el-table-column prop="equipment_model" label="型号"></el-table-column>
                 <el-table-column prop="cost_category" label="成本类别"></el-table-column>
                 <el-table-column prop="amount" label="金额(万元)"></el-table-column>
                 <el-table-column prop="date" label="发生日期"></el-table-column>
               </el-table>
-            </el-card>
-            <el-card class="box-card" style="margin-top: 20px;">
-              <template #header>
-                <div class="card-header"><span>📊 LCC 预测分析仪表盘</span>
-                  <el-select v-model="selectedEquipment" @change="fetchForecast" placeholder="选择设备类型" style="width: 200px">
-                    <el-option label="高压熔断器" value="高压熔断器"></el-option>
-                    <el-option label="隔离开关" value="隔离开关"></el-option>
-                    <el-option label="交流避雷器" value="交流避雷器"></el-option>
-                    <el-option label="电缆终端" value="电缆终端"></el-option>
-                    <el-option label="电缆" value="电缆"></el-option>
-                  </el-select>
-                </div>
-              </template>
-              <div id="lcc-chart" style="width: 100%; height: 400px;"></div>
             </el-card>
           </el-col>
         </el-row>
@@ -106,6 +87,8 @@
         const taskStatus = ref('');
         const processing = ref(false);
         const tableData = ref([]);
+        const allTableData = ref([]);
+        const availableEquipments = ref(['高压熔断器', '隔离开关', '交流避雷器', '电缆终端']);
         const selectedEquipment = ref('高压熔断器');
 
         const handleUploadStart = () => {
@@ -156,11 +139,32 @@
         const fetchRecords = async () => {
           try {
             const res = await axios.get('/api/v1/records');
-            tableData.value = res.data;
+            allTableData.value = res.data;
+            
+            // 动态提取所有可选的设备类型
+            const eqs = new Set(res.data.map(item => item.equipment_type));
+            if (eqs.size > 0) {
+              availableEquipments.value = Array.from(eqs);
+            }
+            
+            filterTableData();
             await fetchForecast();
           } catch (error) {
             console.error('获取失败', error);
           }
+        };
+
+        const filterTableData = () => {
+          if (!selectedEquipment.value) {
+            tableData.value = allTableData.value;
+          } else {
+            tableData.value = allTableData.value.filter(item => item.equipment_type === selectedEquipment.value);
+          }
+        };
+
+        const onEquipmentChange = () => {
+          filterTableData();
+          fetchForecast();
         };
 
         const initChart = () => {
@@ -170,7 +174,7 @@
 
         onMounted(() => { initChart(); fetchRecords(); });
 
-        return { taskStatus, processing, tableData, selectedEquipment, handleUploadStart, handleUploadSuccess, fetchRecords, fetchForecast };
+        return { taskStatus, processing, tableData, availableEquipments, selectedEquipment, handleUploadStart, handleUploadSuccess, fetchRecords, fetchForecast, onEquipmentChange };
       }
     };
     const app = createApp(App);
