@@ -2,4 +2,8 @@
 __pycache__/
 venv/
 data/*.xlsx
-data/*.txt
+data/*.txt*.db
+*.png
+data/*.docx
+data/*.md
+data/uploads/
