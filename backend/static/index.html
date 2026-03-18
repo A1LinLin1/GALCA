@@ -47,7 +47,17 @@
           <el-col :span="16">
             <el-card class="box-card">
               <template #header>
-                <div class="card-header"><span>📈 LCC 成本拟合曲线</span></div>
+                <div class="card-header">
+                  <span>📈 LCC 成本拟合曲线</span>
+                  <el-select v-model="selectedEquipment" @change="fetchForecast" placeholder="选择设备类型" style="width: 200px">
+                    <el-option label="高压熔断器" value="高压熔断器"></el-option>
+                    <el-option label="隔离开关" value="隔离开关"></el-option>
+                    <el-option label="交流避雷器" value="交流避雷器"></el-option>
+                    <el-option label="电缆终端" value="电缆终端"></el-option>
+                    <el-option label="电缆" value="电缆"></el-option>
+                    <el-option label="低压配电 0.6/1kV" value="低压配电 0.6/1kV"></el-option>
+                  </el-select>
+                </div>
               </template>
               <div id="lcc-chart" style="height: 350px;"></div>
             </el-card>
