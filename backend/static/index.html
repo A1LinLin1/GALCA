@@ -34,12 +34,14 @@
               </template>
               <el-upload
                 drag action="/api/v1/upload" multiple
+                :before-upload="handleUploadStart"
                 :on-success="handleUploadSuccess"
               >
                 <el-icon class="el-icon--upload"><Upload-Filled /></el-icon>
                 <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
               </el-upload>
               <el-alert v-if="taskStatus" :title="taskStatus" type="success" show-icon style="margin-top: 15px;" :closable="false" />
+              <el-alert v-if="processing" title="智能体网络正在后台处理..." type="warning" show-icon style="margin-top: 10px;" :closable="false" />
             </el-card>
           </el-col>
           <el-col :span="16">
@@ -68,6 +70,20 @@
                 <el-table-column prop="date" label="发生日期"></el-table-column>
               </el-table>
             </el-card>
+            <el-card class="box-card" style="margin-top: 20px;">
+              <template #header>
+                <div class="card-header"><span>📊 LCC 预测分析仪表盘</span>
+                  <el-select v-model="selectedEquipment" @change="fetchForecast" placeholder="选择设备类型" style="width: 200px">
+                    <el-option label="高压熔断器" value="高压熔断器"></el-option>
+                    <el-option label="隔离开关" value="隔离开关"></el-option>
+                    <el-option label="交流避雷器" value="交流避雷器"></el-option>
+                    <el-option label="电缆终端" value="电缆终端"></el-option>
+                    <el-option label="电缆" value="电缆"></el-option>
+                  </el-select>
+                </div>
+              </template>
+              <div id="lcc-chart" style="width: 100%; height: 400px;"></div>
+            </el-card>
           </el-col>
         </el-row>
       </el-main>
@@ -78,32 +94,60 @@
     const App = {
       setup() {
         const taskStatus = ref('');
+        const processing = ref(false);
         const tableData = ref([]);
+        const selectedEquipment = ref('高压熔断器');
+
+        const handleUploadStart = () => {
+          processing.value = true;
+          taskStatus.value = '';
+        };
 
         const handleUploadSuccess = (response) => {
-          taskStatus.value = response.message || '文件已进入后台处理队列，即将刷新列表...';
-          // 自动延迟抓取最新数据（因为后台是大模型处理）
-          setTimeout(fetchRecords, 5000);
-          setTimeout(fetchRecords, 10000);
+          taskStatus.value = response.message || '文件已接收，AI 分析引擎启动中...';
+          
+          let checkCount = 0;
+          const checkTimer = setInterval(async () => {
+             await fetchRecords();
+             checkCount++;
+             if(checkCount >= 5) {
+                clearInterval(checkTimer);
+                processing.value = false;
+                taskStatus.value = '智能体流程执行完毕！';
+             }
+          }, 3000);
+        };
+
+        const fetchForecast = async () => {
+          try {
+            const forecastRes = await axios.get(`/api/v1/forecast/${selectedEquipment.value}`);
+            if (forecastRes.data && forecastRes.data.data) {
+              const predictions = JSON.parse(forecastRes.data.data.forecast_json);
+              if (predictions && predictions.length > 0) {
+                 const myChart = echarts.getInstanceByDom(document.getElementById('lcc-chart')) || echarts.init(document.getElementById('lcc-chart'));
+                 myChart.setOption({
+                   title: { text: `设备全生命周期预测 (${selectedEquipment.value}) - ${forecastRes.data.data.algo_used}` },
+                   xAxis: { type: 'category', data: ['2020','2021','2022','2023','2024','2025','2026'] },
+                   yAxis: { type: 'value', name: '成本(万元)' },
+                   series: [{ data: predictions, type: 'line', smooth: true, areaStyle: { opacity: 0.3 } }]
+                 });
+              }
+            } else {
+               // 重置图表
+               const myChart = echarts.getInstanceByDom(document.getElementById('lcc-chart')) || echarts.init(document.getElementById('lcc-chart'));
+               myChart.clear();
+               myChart.setOption({title: {text: `暂无 ${selectedEquipment.value} 的AI预测数据`}});
+            }
+          } catch (error) {
+            console.error('预测数据获取失败', error);
+          }
         };
 
         const fetchRecords = async () => {
           try {
             const res = await axios.get('/api/v1/records');
             tableData.value = res.data;
-            
-            // 尝试获取其中一种设备的预测数据来更新图表 (例如高压熔断器)
-            const forecastRes = await axios.get('/api/v1/forecast/高压熔断器');
-            if (forecastRes.data && forecastRes.data.data) {
-              const predictions = JSON.parse(forecastRes.data.data.forecast_json);
-              if (predictions && predictions.length > 0) {
-                 const myChart = echarts.getInstanceByDom(document.getElementById('lcc-chart')) || echarts.init(document.getElementById('lcc-chart'));
-                 myChart.setOption({
-                   title: { text: `设备全生命周期预测 (高压熔断器) - ${forecastRes.data.data.algo_used}` },
-                   series: [{ data: predictions, type: 'line', smooth: true, areaStyle: { opacity: 0.3 } }]
-                 });
-              }
-            }
+            await fetchForecast();
           } catch (error) {
             console.error('获取失败', error);
           }
@@ -111,17 +155,12 @@
 
         const initChart = () => {
           const myChart = echarts.init(document.getElementById('lcc-chart'));
-          myChart.setOption({
-            title: { text: '设备全生命周期预测' }, tooltip: { trigger: 'axis' },
-            xAxis: { type: 'category', data: ['2020','2021','2022','2023','2024','2025','2026'] },
-            yAxis: { type: 'value', name: '成本(万元)' },
-            series: [{ data: [150,230,224,218,135,147,260], type: 'line', smooth: true, areaStyle: { opacity: 0.3 } }]
-          });
+          myChart.setOption({ title: { text: '设备全生命周期预测 (请选择设备)' }});
         };
 
         onMounted(() => { initChart(); fetchRecords(); });
 
-        return { taskStatus, tableData, handleUploadSuccess, fetchRecords };
+        return { taskStatus, processing, tableData, selectedEquipment, handleUploadStart, handleUploadSuccess, fetchRecords, fetchForecast };
       }
     };
     const app = createApp(App);
